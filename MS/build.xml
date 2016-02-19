@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="MS" default="all" basedir=".">  
+	<!-- define properties -->
+	<property name="src.dir" value="${basedir}\src" /> 
+	<property environment="env" description="配置为系统环境变量" />
+    <property name="jboss.home_s" value="${env.JBOSS_PATH}" 
+    	description="根据环境变量指定jboss home" />
+	<property name="jboss.server.config" value="default"/>
+	<property name="jboss.deploy.dir"
+		value="${jboss.home_s}\server\${jboss.server.config}\deploy\${ant.project.name}" 
+		description="jboss发布目录"/>
+	<property name="build.dir" value="${basedir}\build" />
+	<property name="conf.dir" value="${basedir}\conf" />
+	
+	<property name="dir.path" value="com\\lia\\vir"/>
+	<!-- 临时文件目录 -->
+	<property name="dest.dir" value="${basedir}\dest"/>
+	<property name="common.class.tmp.dir" value="${dest.dir}\common"/>
+	<property name="ejb.class.tmp.dir" value="${dest.dir}\ejb"/>
+	
+	<property name="webContent.dir" value="${basedir}\WebContent"/>
+	<property name="classes.dir" value="${build.dir}\classes"/>
+	<property name="ejb.java.dir" value="${basedir}\src\${dir.path}\ejb"/>
+	<property name="ejb.class.dir" value="${classes.dir}\${dir.path}\ejb"/>
+	<property name="common.java.dir" value="${basedir}\src\${dir.path}\common"/>
+	<property name="common.class.dir" value="${classes.dir}\${dir.path}\common"/>
+	
+	<property name="ear.dir" value="${dest.dir}\ears" />
+	
+	<!-- 是否複製ejb配置文件標誌 -->
+	<property name="equal.ejb.cf.cp.condi" value="ejb" />
+	
+    <path id="compile.classpath">
+        <fileset dir="WebContent/WEB-INF/lib">
+            <include name="*.jar"/>
+        </fileset>
+    </path>
+	
+	<!-- 打包 -->
+	<target name="jar">
+		<mkdir dir="${top.dir}"/>
+		<move todir="${top.dir}">
+			<fileset dir="${classes.dir}">
+				<include name="**/**/**/${first.arg}/**"/>  
+				<exclude name="**/**/**/action/**"/>
+				<exclude name="**/**/**/${second.arg}/**"/>
+			</fileset>
+		</move>
+		<condition property="is.cp.cf">
+            <!--如果arg1的值与arg2的值相等返回true，否则为false-->
+            <equals arg1="${first.arg}" arg2="${equal.ejb.cf.cp.condi}"/>
+        </condition>
+		<antcall target="cp.cf">
+			<param name="cp.dir" value="${top.dir}" />
+		</antcall>
+		<jar destfile="${top.dir}/${ant.project.name}.${first.arg}.jar"
+			basedir="${top.dir}"/>
+	</target>
+	
+	<target name="cp.cf" if="is.cp.cf">
+		<mkdir dir="${cp.dir}\META-INF" />
+		<copy todir="${cp.dir}\META-INF">
+			<fileset dir="${conf.dir}">
+				<include name="*persistence*.xml" />
+			</fileset>
+		</copy>
+	</target>
+      
+    <target name="clean">
+    	<delete dir="${dest.dir}" />
+        <delete dir="${build.dir}" />
+    </target>
+	
+	<target name="init" depends="clean">
+		<mkdir dir="${dest.dir}"/>
+		<mkdir dir="${build.dir}"/>
+		<mkdir dir="${classes.dir}"/>
+	</target>
+      
+    <target name="compile" depends="init" >
+        <javac destdir="${classes.dir}" debug="true" srcdir="${src.dir}"
+        	includeantruntime="false" >
+        	<compilerarg line="-encoding UTF-8 "/>
+            <classpath refid="compile.classpath"/>
+        </javac>  
+    	<copy file="${src.dir}\struts.xml" 
+    		todir="${classes.dir}"/>
+    </target>  
+	
+	<!-- 公共类打包 -->
+	<target name="common.lib" depends="compile">
+		<antcall target="jar">
+			<param name="top.dir" value="${common.class.tmp.dir}" />
+			<param name="first.arg" value="common" />
+			<param name="second.arg" value="ejb" />
+		</antcall>
+		<delete dir="${common.class.dir}"/>
+	</target>
+      
+	<!-- 打ejb包 -->
+	<target name="ejb.lib" depends="common.lib">
+		<antcall target="jar">
+			<param name="top.dir" value="${ejb.class.tmp.dir}" />
+			<param name="first.arg" value="ejb" />
+			<param name="second.arg" value="common" />
+		</antcall>
+		<delete dir="${ejb.class.dir}"/>
+	</target>
+	
+	<!-- 打war包 -->
+    <target name="war" depends="common.lib,ejb.lib">  
+        <war destfile="${dest.dir}/${ant.project.name}.war" webxml="${webContent.dir}/WEB-INF/web.xml">  
+            <fileset dir="WebContent"/>  
+            <classes dir="${classes.dir}"/>
+        	<!-- <lib dir="${common.class.tmp.dir}">
+        		<include name="**.jar"/>
+        	</lib> -->
+        </war>
+    	<!--<copy overwrite="true" file="${dest.dir}/${ant.project.name}.war"
+    		todir="${jboss.deploy.dir}"/> -->
+    </target> 
+	
+	<target name="undeploy">
+		<!-- <delete dir="${jboss.deploy.dir}"/> -->
+	</target>
+	
+	<target name="deploy" depends="war">
+		<mkdir dir="${ear.dir}" />
+		<mkdir dir="${ear.dir}\lib" />
+		<mkdir dir="${jboss.deploy.dir}" />
+		<copy todir="${ear.dir}\lib" file="${common.class.tmp.dir}\${ant.project.name}.common.jar" />
+		<copy todir="${ear.dir}\lib">
+			<fileset  dir="${jboss.home_s}\server\${jboss.server.config}\lib">
+				<include name="*.jar" />
+			</fileset>
+		</copy>
+		<copy todir="${ear.dir}" file="${ejb.class.tmp.dir}\${ant.project.name}.ejb.jar" />
+		<copy todir="${ear.dir}" file="${dest.dir}\${ant.project.name}.war" />
+		<jar destfile="${ear.dir}/${ant.project.name}.ear" basedir="${ear.dir}" />
+		<copy overwrite="true" file="${ear.dir}/${ant.project.name}.ear"
+					todir="${jboss.deploy.dir}" />
+	</target>
+	
+	<target name="all">
+		<antcall target="undeploy"/>
+		<antcall target="deploy"/>
+	</target>
+	
+</project>  
